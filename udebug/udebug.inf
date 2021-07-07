@@ -1,0 +1,27 @@
+[Defines]
+  INF_VERSION                    = 0x00010006
+  BASE_NAME                      = udebug
+  FILE_GUID                      = BBCA174F-7891-4487-A201-397B336B5F1D
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UefiMain
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES           = X64
+#
+
+[Sources]
+  udebug.c
+  udebug_rw.nasm
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
+  UefiLib
+
+[Protocols]
