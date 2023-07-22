@@ -69,10 +69,9 @@ int test_udbgrw_simple()
 	bool udbgwr_active = false;
 	__try
 	{
-		unsigned __int64 crbus_data;
 		udbgwr(UDBG_CMD_CRBUS, crbus_addr, 0xdeadbeefdeadbeef);
 		udbgwr_active = true;
-		udbgrd(UDBG_CMD_CRBUS, crbus_addr, &crbus_data);
+		udbgrd(UDBG_CMD_CRBUS, crbus_addr);
 
 		wprintf(L"[ALERT] udbgrd/udbgwr instructions are active!!!\n");
 		return -1;
@@ -173,7 +172,7 @@ int udbgwr_test_speculative()
 			if (rand() % 2 == 0)
 				udbgwr(UDBG_CMD_URAM, uram_addr, 0);
 			else
-				udbgrd(UDBG_CMD_URAM, uram_addr, 0);
+				udbgrd(UDBG_CMD_URAM, uram_addr);
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
 		{
@@ -207,7 +206,7 @@ int udbgwr_test_speculative()
 			if (rand() % 2 == 0)
 				udbgwr(UDBG_CMD_URAM, uram_addr, 0);
 			else
-				udbgrd(UDBG_CMD_URAM, uram_addr, 0);
+				udbgrd(UDBG_CMD_URAM, uram_addr);
 
 			int new_tsc_less = __rdtsc() < start_ts;
 			int sc_buf_line_idx = sc_buf_line_idxes[new_tsc_less];
@@ -259,10 +258,9 @@ int udbgrd_test_speculative()
 		volatile unsigned char val = g_rob_lock_buf[0];
 		__try
 		{
-			unsigned __int64 tsc_multiplier = 0;
-			udbgrd(UDBG_CMD_URAM, uram_addr, &tsc_multiplier);
+			register unsigned __int64 tsc_multiplier = udbgrd(UDBG_CMD_URAM, uram_addr);
 			_mm_lfence();
-			volatile unsigned char val2 = g_sidechan_buf[get_sc_buf_idx(tsc_multiplier & 0xff)];
+			volatile unsigned char val = g_sidechan_buf[get_sc_buf_idx(tsc_multiplier & 0xff)];
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
 		{
@@ -289,15 +287,19 @@ int udbgrd_test_speculative()
 	int res = 0;
 	if (tsc_multiplier != -1)
 	{
+		assert(tsc_multiplier < sizeof sc_buf_stats / sizeof sc_buf_stats[0]);
 		wprintf(L"[ALERT] udbgrd speculative execution problem is discovered!!!\n"
-			" Read TSC Multiplier value: 0x%02x: Hit Count: 0x%02x\n", tsc_multiplier, sc_buf_stats[tsc_multiplier]);
-		res = -1;
+			" Read TSC Multiplier LSB value: 0x%02x: Hit Count: 0x%02x\n", tsc_multiplier, sc_buf_stats[tsc_multiplier]);
 
 		for (int idx = 0; idx < sc_buf_stats_len; ++idx)
 		{
-			wprintf(L"%02x-%02x: ", idx, sc_buf_stats[idx]);
+			if (idx % 0x10 == 0)
+				wprintf(L"\n%02x ", idx);
+			wprintf(L"%4x ", sc_buf_stats[idx]);
 		}
 		wprintf(L"\n");
+
+		res = -1;
 	}
 	else
 	{

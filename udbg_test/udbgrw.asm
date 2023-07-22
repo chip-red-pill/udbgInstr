@@ -5,7 +5,7 @@ udbgrd proc public
 
 	mov rax, rdx
 	db 0fh, 0eh
-	mov [r8], rdx
+	mov rax, rdx
 
 	pop rbx
 	ret

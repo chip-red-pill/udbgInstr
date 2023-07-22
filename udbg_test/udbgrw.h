@@ -8,6 +8,6 @@ extern "C"
 		UDBG_CMD_URAM = 0x10
 	};
 
-	void udbgrd(unsigned command, unsigned address, unsigned __int64* out_data);
+	unsigned __int64 udbgrd(unsigned command, unsigned address);
 	void udbgwr(unsigned command, unsigned address, unsigned __int64 data);
 }
