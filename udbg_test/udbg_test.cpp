@@ -9,8 +9,8 @@
 
 bool is_atom_core()
 {
-	const __int8 atom_models[] = { 0x9c, 0x96, 0x8a, 0x7a, 0x5f, 0x5c, 0x4c, 0x5d,
-								   0x5a, 0x4d, 0x4a, 0x37, 0x36, 0x35, 0x27, 0x26, 0x1c };
+	const unsigned __int8 atom_models[] = { 0x9c, 0x96, 0x8a, 0x7a, 0x5f, 0x5c, 0x4c, 0x5d,
+																					0x5a, 0x4d, 0x4a, 0x37, 0x36, 0x35, 0x27, 0x26, 0x1c };
 
 	int cpuinfo[4];
 	__cpuid(cpuinfo, 1);
@@ -102,7 +102,7 @@ __declspec(align(CACHE_LINE_SIZE))
 __declspec(align(CACHE_LINE_SIZE))
 	unsigned char g_rob_lock_buf[CACHE_LINE_SIZE];
 const unsigned g_sc_buf_line_cnt = sizeof g_sidechan_buf / SC_LINE_SIZE;
-unsigned g_cached_mem_access_treshold_ts;
+unsigned g_cached_mem_access_threshold_ts;
 
 void measure_cached_access()
 {
@@ -122,7 +122,7 @@ void measure_cached_access()
 		avg_cached_mem_access_ts = (avg_cached_mem_access_ts + (ld_end_ts - ld_start_ts)) / 2;
 	}
 
-	g_cached_mem_access_treshold_ts = avg_cached_mem_access_ts + avg_cached_mem_access_ts / 10;
+	g_cached_mem_access_threshold_ts = unsigned int(avg_cached_mem_access_ts + avg_cached_mem_access_ts / 10);
 }
 
 inline unsigned get_sc_buf_idx(unsigned line_idx)
@@ -138,8 +138,8 @@ inline bool measure_sc_buf_line_access(unsigned line_idx)
 	volatile unsigned char val = g_sidechan_buf[get_sc_buf_idx(line_idx)];
 	unsigned __int64 ld_end_ts = __rdtscp(&proc_id);
 
-	assert(g_cached_mem_access_treshold_ts > 0);
-	if ((ld_end_ts - ld_start_ts) <= g_cached_mem_access_treshold_ts)
+	assert(g_cached_mem_access_threshold_ts > 0);
+	if ((ld_end_ts - ld_start_ts) <= g_cached_mem_access_threshold_ts)
 		return true;
 	return false;
 }
@@ -172,7 +172,7 @@ int udbgwr_test_speculative()
 			if (rand() % 2 == 0)
 				udbgwr(UDBG_CMD_URAM, uram_addr, 0);
 			else
-				udbgrd(UDBG_CMD_URAM, uram_addr);
+				udbgrd(UDBG_CMD_URAM, uram_addr, 0);
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
 		{
@@ -189,28 +189,32 @@ int udbgwr_test_speculative()
 	int sc_buf_line_idxes[2] = {0x37, 0xc9};
 	for (int iter = 0; iter < temp_err_test_max_iter_count; ++iter)
 	{
-		assert(g_sc_buf_line_cnt >= 2);
-		for (int line_idx = 0; line_idx < 2; ++line_idx)
-			_mm_clflush(&g_sidechan_buf[get_sc_buf_idx(line_idx)]);
-		_mm_clflush(&g_rob_lock_buf[0]);
-
+		// Serializing each iteration
 		register int cpu_info[4];
 		__cpuid(cpu_info, 0);
-		
-		register unsigned int proc_id;
-		__int64 start_ts = __rdtscp(&proc_id);
-		_mm_lfence();
+
+		for (int new_tsc_less_line_idx = false; new_tsc_less_line_idx <= int(true); ++new_tsc_less_line_idx)
+			_mm_clflush(&g_sidechan_buf[get_sc_buf_idx(sc_buf_line_idxes[new_tsc_less_line_idx])]);
+		_mm_clflush(&g_rob_lock_buf[0]);
+
+		_mm_mfence(); // Ordering with clflush instructions
 		volatile unsigned char val = g_rob_lock_buf[0];
+
+		register unsigned int proc_id;
+		unsigned __int64 start_ts = __rdtscp(&proc_id);
+		_mm_lfence(); // Ordering with udbgwr/udbgrd instructions
+
 		__try
 		{
 			if (rand() % 2 == 0)
 				udbgwr(UDBG_CMD_URAM, uram_addr, 0);
 			else
-				udbgrd(UDBG_CMD_URAM, uram_addr);
+				udbgrd(UDBG_CMD_URAM, uram_addr, 0);
 
-			int new_tsc_less = __rdtsc() < start_ts;
-			int sc_buf_line_idx = sc_buf_line_idxes[new_tsc_less];
-			volatile unsigned char val2 = g_sidechan_buf[get_sc_buf_idx(sc_buf_line_idx)];
+			_mm_lfence(); // Ordering with udbgwr/udbgrd instructions
+			bool new_tsc_less = __rdtsc() < start_ts;
+			const int sc_buf_line_idx = sc_buf_line_idxes[new_tsc_less];
+			volatile unsigned char val = g_sidechan_buf[get_sc_buf_idx(sc_buf_line_idx)];
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
 		{
@@ -221,8 +225,8 @@ int udbgwr_test_speculative()
 	}
 
 	int res = 0;
-	const int hit_count_treshold = temp_err_test_max_iter_count / 100;
-	if (sc_buf_stats[1] >= hit_count_treshold)
+	const int hit_count_threshold = temp_err_test_max_iter_count / 100;
+	if (sc_buf_stats[1] >= hit_count_threshold)
 	{
 		wprintf(L"[ALERT] udbgwr temporal speculative execution problem is discovered!!!\n");
 		res = -1;
@@ -233,9 +237,9 @@ int udbgwr_test_speculative()
 		res = 0;
 	}
 
-	if (sc_buf_stats[0] >= hit_count_treshold)
+	if (sc_buf_stats[0] >= hit_count_threshold)
 	{
-		wprintf(L"[INFO] Speculative execution behind udbgwr is detected\n");
+		wprintf(L"[INFO] Speculative execution behind udbgwr/udbgrd is detected\n");
 	}
 	return res;
 }
@@ -249,17 +253,20 @@ int udbgrd_test_speculative()
 	const int sc_buf_stats_len = sizeof sc_buf_stats / sizeof sc_buf_stats[0];
 	for (int iter = 0; iter < max_iter_count; ++iter)
 	{
+		// Serializing each iteration
+		register int cpu_info[4];
+		__cpuid(cpu_info, 0);
+
 		for (int line_idx = 0; line_idx < g_sc_buf_line_cnt; ++line_idx)
 			_mm_clflush(&g_sidechan_buf[get_sc_buf_idx(line_idx)]);
 		_mm_clflush(&g_rob_lock_buf[0]);
 
-		_mm_lfence();
-
+		_mm_mfence(); // Ordering with clflush instructions
 		volatile unsigned char val = g_rob_lock_buf[0];
+
 		__try
 		{
 			register unsigned __int64 tsc_multiplier = udbgrd(UDBG_CMD_URAM, uram_addr);
-			_mm_lfence();
 			volatile unsigned char val = g_sidechan_buf[get_sc_buf_idx(tsc_multiplier & 0xff)];
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
@@ -273,14 +280,15 @@ int udbgrd_test_speculative()
 		}
 	}
 
-	const int hit_count_treshold = max_iter_count / 100;
+	const int hit_count_threshold = max_iter_count / 100;
 	int tsc_multiplier = -1;
+	int hit_max = 0;
 	for (int idx = 0; idx < sc_buf_stats_len; ++idx)
 	{
-		if (sc_buf_stats[idx] >= hit_count_treshold)
+		if (sc_buf_stats[idx] >= hit_count_threshold && sc_buf_stats[idx] > hit_max)
 		{
 			tsc_multiplier = idx;
-			break;
+			hit_max = sc_buf_stats[idx];
 		}
 	}
 
@@ -313,9 +321,9 @@ int main()
 	const wchar_t* str_core[] = { L"Big", L"Atom" };
 	wprintf(L"[INFO] %s Core is detected\n", str_core[is_atom_core()]);
 
-	srand(time(NULL));
+	srand(int(time(NULL)));
 	measure_cached_access();
-	wprintf(L"[INFO] Cached read treshold ts: 0x%x\n", g_cached_mem_access_treshold_ts);
+	wprintf(L"[INFO] Cached read threshold ts: 0x%x\n", g_cached_mem_access_threshold_ts);
 
 	int res = 0;
 	res = test_udbgrw_simple();
