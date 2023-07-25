@@ -113,6 +113,7 @@ void measure_cached_access()
 	register unsigned int proc_id;
 
 	volatile unsigned char val = buffer[0];
+
 	for (int iter = 0; iter < iter_count; ++iter)
 	{
 		unsigned __int64 ld_start_ts = __rdtscp(&proc_id);
@@ -122,7 +123,7 @@ void measure_cached_access()
 		avg_cached_mem_access_ts = (avg_cached_mem_access_ts + (ld_end_ts - ld_start_ts)) / 2;
 	}
 
-	g_cached_mem_access_threshold_ts = unsigned int(avg_cached_mem_access_ts + avg_cached_mem_access_ts / 10);
+	g_cached_mem_access_threshold_ts = unsigned int(avg_cached_mem_access_ts + avg_cached_mem_access_ts / 2);
 }
 
 inline unsigned get_sc_buf_idx(unsigned line_idx)
