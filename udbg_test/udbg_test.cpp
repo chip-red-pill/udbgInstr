@@ -96,11 +96,11 @@ int test_udbgrw_simple()
 }
 
 const int CACHE_LINE_SIZE = 0x40;
-const int SC_LINE_SIZE = CACHE_LINE_SIZE * 8;
-__declspec(align(CACHE_LINE_SIZE))
+const int SC_LINE_SIZE = CACHE_LINE_SIZE * 0x11;
+__declspec(align(CACHE_LINE_SIZE * 2))
 	unsigned char g_sidechan_buf[SC_LINE_SIZE * 0x100];
 __declspec(align(CACHE_LINE_SIZE))
-	unsigned char g_rob_lock_buf[CACHE_LINE_SIZE];
+	unsigned char g_rob_lock_buf[CACHE_LINE_SIZE * 2];
 const unsigned g_sc_buf_line_cnt = sizeof g_sidechan_buf / SC_LINE_SIZE;
 unsigned g_cached_mem_access_threshold_ts;
 
@@ -147,10 +147,20 @@ inline bool measure_sc_buf_line_access(unsigned line_idx)
 
 int get_cached_sc_buf_line_idx()
 {
-	const int idx_mask = g_sc_buf_line_cnt - 1;
-	for (int idx = 0; idx < g_sc_buf_line_cnt; ++idx)
+	bool idx_map[g_sc_buf_line_cnt] = {};
+	int line_idx;
+	for (int idx_num = 0; idx_num < g_sc_buf_line_cnt; ++idx_num)
 	{
-		int line_idx = ((idx * 167) + 13) & idx_mask;
+		while (true)
+		{
+			line_idx = rand() % g_sc_buf_line_cnt;
+			if (!idx_map[line_idx])
+			{
+				idx_map[line_idx] = true;
+				break;
+			}
+		}
+
 		if (measure_sc_buf_line_access(line_idx))
 			return line_idx;
 	}
@@ -313,6 +323,14 @@ int udbgrd_test_speculative()
 	else
 	{
 		wprintf(L"[OK] There was not found a problem with udbgrd speculative execution\n");
+
+		/*for (int idx = 0; idx < sc_buf_stats_len; ++idx)
+		{
+			if (idx % 0x10 == 0)
+				wprintf(L"\n%02x ", idx);
+			wprintf(L"%4x ", sc_buf_stats[idx]);
+		}
+		wprintf(L"\n");*/
 	}
 	return res;
 }
